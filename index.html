@@ -238,6 +238,9 @@
     function formatInt(n) {
       return (Number.isFinite(n) ? Math.trunc(n) : 0).toLocaleString("ja-JP");
     }
+    function formatPlannedSeats(n) {
+      return Number.isFinite(n) ? formatInt(n) : "上限なし";
+    }
 
     function addRow(name = "", votes = "", plannedSeats = "") {
       const tr = document.createElement("tr");
@@ -262,7 +265,7 @@
 
         for (const p of parties) {
           const s = seats[p.name];
-          if (s >= p.plannedSeats) {
+          if (Number.isFinite(p.plannedSeats) && s >= p.plannedSeats) {
             continue;
           }
           const q = p.votes / (s + 1);
@@ -290,11 +293,12 @@
       const parties = rows.map(tr => {
         const name = tr.children[0].querySelector("input").value.trim();
         const votes = Number(tr.children[1].querySelector("input").value);
-        const plannedSeats = Number(tr.children[2].querySelector("input").value);
+        const plannedInput = tr.children[2].querySelector("input").value.trim();
+        const plannedSeats = plannedInput === "" ? Number.POSITIVE_INFINITY : Number(plannedInput);
         return {
           name,
           votes: Number.isFinite(votes) ? votes : 0,
-          plannedSeats: Number.isFinite(plannedSeats) ? plannedSeats : 0
+          plannedSeats: Number.isFinite(plannedSeats) ? plannedSeats : Number.POSITIVE_INFINITY
         };
       }).filter(p => p.name !== "");
 
@@ -316,7 +320,7 @@
         tr.innerHTML = `
           <td>${escapeHtml(p.name)}</td>
           <td>${formatInt(p.votes)}</td>
-          <td>${formatInt(p.plannedSeats)}</td>
+          <td>${formatPlannedSeats(p.plannedSeats)}</td>
           <td>${allocatedSeats}</td>
         `;
         resultBody.appendChild(tr);
