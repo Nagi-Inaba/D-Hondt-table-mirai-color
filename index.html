@@ -166,14 +166,14 @@
   <main>
     <div class="row">
       <label>
-        総議席数（配分する数・使用済みは引かない）
+        総議席数（配分する比例の枠の合計）
         <input id="seats" type="number" min="1" value="10" />
       </label>
       <button id="add" type="button">行を追加</button>
       <button id="calc" type="button">計算</button>
       <button id="sample" type="button">サンプル</button>
     </div>
-    <div class="note">入力：政党名・得票（またはポイント）・使用済み比例議席。総議席数は固定で、使用済みを差し引かずに配分します。出力：追加配分・比例合計と配分過程（上位商）。</div>
+    <div class="note">入力：政党名・得票（またはポイント）・比例枠の使用予定数。総議席数は固定で、枠の上限を超えた分は他党に繰り上がります。出力：配分議席と配分過程（上位商）。</div>
 
     <div class="grid">
       <div>
@@ -183,7 +183,7 @@
             <tr>
               <th>政党</th>
               <th>得票</th>
-              <th>使用済み比例</th>
+              <th>比例枠予定</th>
               <th style="text-align:center;">削除</th>
             </tr>
           </thead>
@@ -198,9 +198,8 @@
             <tr>
               <th>政党</th>
               <th>得票</th>
-              <th>使用済み比例</th>
-              <th>追加配分</th>
-              <th>比例合計</th>
+              <th>比例枠予定</th>
+              <th>配分議席</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -213,7 +212,7 @@
               <th>#</th>
               <th>政党</th>
               <th>商（得票 ÷ (獲得議席+1)）</th>
-              <th>この時点の比例議席（使用済み含む）</th>
+              <th>この時点の比例議席</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -240,35 +239,41 @@
       return (Number.isFinite(n) ? Math.trunc(n) : 0).toLocaleString("ja-JP");
     }
 
-    function addRow(name = "", votes = "", usedSeats = "") {
+    function addRow(name = "", votes = "", plannedSeats = "") {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td><input type="text" placeholder="例：A党" value="${escapeHtml(name)}" /></td>
         <td><input type="number" min="0" step="1" placeholder="例：120000" value="${votes}" /></td>
-        <td><input type="number" min="0" step="1" placeholder="例：2" value="${usedSeats}" /></td>
+        <td><input type="number" min="0" step="1" placeholder="例：4" value="${plannedSeats}" /></td>
         <td style="text-align:center;"><button type="button" aria-label="削除">×</button></td>
       `;
       tr.querySelector("button").addEventListener("click", () => tr.remove());
       tbody.appendChild(tr);
     }
 
-    // D'Hondt: votes/(s+1) の最大を remainingSeats 回選ぶ
+    // D'Hondt: votes/(s+1) の最大を totalSeats 回選ぶ（比例枠の上限で打ち止め）
     // タイブレーク：商が同じなら得票が多い方（それも同じなら先に出た方）
-    function dhondtAllocate(parties, remainingSeats) {
-      const seats = Object.fromEntries(parties.map(p => [p.name, p.usedSeats]));
+    function dhondtAllocate(parties, totalSeats) {
+      const seats = Object.fromEntries(parties.map(p => [p.name, 0]));
       const steps = [];
 
-      for (let k = 1; k <= remainingSeats; k++) {
+      for (let k = 1; k <= totalSeats; k++) {
         let best = null;
 
         for (const p of parties) {
           const s = seats[p.name];
+          if (s >= p.plannedSeats) {
+            continue;
+          }
           const q = p.votes / (s + 1);
           if (!best || q > best.q || (q === best.q && p.votes > best.votes)) {
             best = { name: p.name, q, votes: p.votes };
           }
         }
 
+        if (!best) {
+          break;
+        }
         seats[best.name] += 1;
         steps.push({
           rank: k,
@@ -285,11 +290,11 @@
       const parties = rows.map(tr => {
         const name = tr.children[0].querySelector("input").value.trim();
         const votes = Number(tr.children[1].querySelector("input").value);
-        const usedSeats = Number(tr.children[2].querySelector("input").value);
+        const plannedSeats = Number(tr.children[2].querySelector("input").value);
         return {
           name,
           votes: Number.isFinite(votes) ? votes : 0,
-          usedSeats: Number.isFinite(usedSeats) ? usedSeats : 0
+          plannedSeats: Number.isFinite(plannedSeats) ? plannedSeats : 0
         };
       }).filter(p => p.name !== "");
 
@@ -306,15 +311,13 @@
       });
 
       for (const p of sorted) {
-        const totalProportional = seatMap[p.name];
-        const additionalSeats = Math.max(0, totalProportional - p.usedSeats);
+        const allocatedSeats = seatMap[p.name];
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${escapeHtml(p.name)}</td>
           <td>${formatInt(p.votes)}</td>
-          <td>${formatInt(p.usedSeats)}</td>
-          <td>${additionalSeats}</td>
-          <td>${totalProportional}</td>
+          <td>${formatInt(p.plannedSeats)}</td>
+          <td>${allocatedSeats}</td>
         `;
         resultBody.appendChild(tr);
       }
@@ -338,10 +341,10 @@
 
     $("#sample").addEventListener("click", () => {
       tbody.innerHTML = "";
-      addRow("A党", 120000, 2);
-      addRow("B党", 90000, 1);
-      addRow("C党", 60000, 0);
-      addRow("D党", 30000, 0);
+      addRow("A党", 120000, 4);
+      addRow("B党", 90000, 2);
+      addRow("C党", 60000, 2);
+      addRow("D党", 30000, 2);
       $("#seats").value = 10;
     });
 
@@ -351,16 +354,21 @@
         alert("政党名が1つも入力されていません。");
         return;
       }
-      const remainingSeats = Math.max(0, totalSeats);
-      const { seats, steps } = dhondtAllocate(parties, remainingSeats);
+      const { seats, steps } = dhondtAllocate(parties, totalSeats);
       renderResults(parties, seats);
       renderSteps(steps);
     });
 
     // 初期表示
-    addRow("A党", 120000, 2);
-    addRow("B党", 90000, 1);
-    addRow("C党", 60000, 0);
+    addRow("自民党", "", "");
+    addRow("チームみらい", "", "");
+    addRow("国民民主党", "", "");
+    addRow("維新", "", "");
+    addRow("共産", "", "");
+    addRow("社民", "", "");
+    addRow("参政", "", "");
+    addRow("減税ゆうこく", "", "");
+    addRow("れいわ", "", "");
   </script>
 </body>
 </html>
