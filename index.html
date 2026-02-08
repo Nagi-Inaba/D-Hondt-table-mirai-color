@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ドント式（D'Hondt）配分計算</title>
+
+  <style>
+    /* =========================
+       カラーパレット（ブランド定義）
+       ========================= */
+    :root{
+      --primary-start:#64d8c6;
+      --primary-end:#bcecd3;
+      --text-black:#000000;
+      --text-white:#ffffff;
+      --border:#dddddd;
+      --muted:#666666;
+      --bg:#ffffff;
+    }
+
+    /* =========================
+       ベース
+       ========================= */
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+      color:var(--text-black);
+      background:var(--bg);
+    }
+    main{
+      padding:24px;
+      max-width:1100px;
+      margin:0 auto;
+    }
+    h2{
+      font-size:16px;
+      margin:12px 0 6px;
+    }
+    .note{
+      color:var(--muted);
+      font-size:12px;
+      margin-top:6px;
+    }
+
+    /* =========================
+       ヘッダー（⑧ 完全実戦用）
+       ========================= */
+    header{
+      background:linear-gradient(15deg,var(--primary-start),var(--primary-end));
+      color:var(--text-black);
+
+      padding:16px 24px;
+      min-height:64px;
+
+      display:flex;
+      align-items:center;
+      gap:12px;
+
+      position:sticky;
+      top:0;
+      z-index:1000;
+
+      box-shadow:0 2px 8px rgba(0,0,0,0.15);
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      width:100%;
+      max-width:1100px;
+      margin:0 auto;
+      padding:0 0; /* header側でpadding済み */
+    }
+    .logo{
+      width:32px;
+      height:32px;
+      flex:0 0 32px;
+      display:block;
+    }
+    header h1{
+      font-size:18px;
+      margin:0;
+      line-height:1.2;
+      font-weight:700;
+    }
+
+    /* =========================
+       UI（入力・表）
+       ========================= */
+    .row{
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:flex-end;
+      margin-bottom:12px;
+    }
+    label{
+      display:grid;
+      gap:6px;
+      font-size:12px;
+    }
+    input[type="number"], input[type="text"]{
+      padding:8px;
+      min-width:180px;
+      border:1px solid var(--border);
+      border-radius:8px;
+      background:#fff;
+    }
+    button{
+      padding:8px 12px;
+      cursor:pointer;
+      border:1px solid var(--border);
+      border-radius:8px;
+      background:#fff;
+    }
+    button:hover{ filter:brightness(0.98); }
+
+    table{
+      border-collapse:collapse;
+      width:100%;
+      margin-top:12px;
+      background:#fff;
+    }
+    th, td{
+      border:1px solid var(--border);
+      padding:8px;
+      text-align:right;
+      vertical-align:middle;
+    }
+    th:first-child, td:first-child{ text-align:left; }
+    .grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:16px;
+      margin-top:8px;
+    }
+    @media (max-width: 900px){
+      .grid{ grid-template-columns:1fr; }
+      input[type="number"], input[type="text"]{ min-width: min(100%, 360px); }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div class="brand">
+      <!-- ロゴ：外部ファイル不要（インラインSVG） -->
+      <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#64d8c6"/>
+            <stop offset="1" stop-color="#bcecd3"/>
+          </linearGradient>
+        </defs>
+        <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#g)" stroke="#000000" stroke-opacity="0.12"/>
+        <path d="M20 38c6 6 18 6 24 0" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round"/>
+        <path d="M20 26c6-6 18-6 24 0" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round" opacity="0.35"/>
+      </svg>
+
+      <h1>ドント式（D'Hondt）配分計算</h1>
+    </div>
+  </header>
+
+  <main>
+    <div class="row">
+      <label>
+        総議席数（配分する数）
+        <input id="seats" type="number" min="1" value="10" />
+      </label>
+      <button id="add" type="button">行を追加</button>
+      <button id="calc" type="button">計算</button>
+      <button id="sample" type="button">サンプル</button>
+    </div>
+    <div class="note">入力：政党名と得票（またはポイント）。出力：獲得議席数と配分過程（上位商）。</div>
+
+    <div class="grid">
+      <div>
+        <h2>入力</h2>
+        <table id="inputTable">
+          <thead>
+            <tr>
+              <th>政党</th>
+              <th>得票</th>
+              <th style="text-align:center;">削除</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div>
+        <h2>結果</h2>
+        <table id="resultTable">
+          <thead>
+            <tr>
+              <th>政党</th>
+              <th>得票</th>
+              <th>議席</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <h2>配分過程（上位商）</h2>
+        <table id="stepsTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>政党</th>
+              <th>商（得票 ÷ (獲得議席+1)）</th>
+              <th>この時点の議席</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const tbody = $("#inputTable tbody");
+    const resultBody = $("#resultTable tbody");
+    const stepsBody = $("#stepsTable tbody");
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#39;");
+    }
+    function formatInt(n) {
+      return (Number.isFinite(n) ? Math.trunc(n) : 0).toLocaleString("ja-JP");
+    }
+
+    function addRow(name = "", votes = "") {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><input type="text" placeholder="例：A党" value="${escapeHtml(name)}" /></td>
+        <td><input type="number" min="0" step="1" placeholder="例：120000" value="${votes}" /></td>
+        <td style="text-align:center;"><button type="button" aria-label="削除">×</button></td>
+      `;
+      tr.querySelector("button").addEventListener("click", () => tr.remove());
+      tbody.appendChild(tr);
+    }
+
+    // D'Hondt: votes/(s+1) の最大を totalSeats 回選ぶ
+    // タイブレーク：商が同じなら得票が多い方（それも同じなら先に出た方）
+    function dhondtAllocate(parties, totalSeats) {
+      const seats = Object.fromEntries(parties.map(p => [p.name, 0]));
+      const steps = [];
+
+      for (let k = 1; k <= totalSeats; k++) {
+        let best = null;
+
+        for (const p of parties) {
+          const s = seats[p.name];
+          const q = p.votes / (s + 1);
+          if (!best || q > best.q || (q === best.q && p.votes > best.votes)) {
+            best = { name: p.name, q, votes: p.votes };
+          }
+        }
+
+        seats[best.name] += 1;
+        steps.push({
+          rank: k,
+          name: best.name,
+          q: best.q,
+          seatsNow: seats[best.name]
+        });
+      }
+      return { seats, steps };
+    }
+
+    function readInput() {
+      const rows = [...tbody.querySelectorAll("tr")];
+      const parties = rows.map(tr => {
+        const name = tr.children[0].querySelector("input").value.trim();
+        const votes = Number(tr.children[1].querySelector("input").value);
+        return { name, votes: Number.isFinite(votes) ? votes : 0 };
+      }).filter(p => p.name !== "");
+
+      const totalSeats = Math.max(1, Number($("#seats").value) || 1);
+      return { parties, totalSeats };
+    }
+
+    function renderResults(parties, seatMap) {
+      resultBody.innerHTML = "";
+      const sorted = [...parties].sort((a,b) => (seatMap[b.name] - seatMap[a.name]) || (b.votes - a.votes));
+
+      for (const p of sorted) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(p.name)}</td>
+          <td>${formatInt(p.votes)}</td>
+          <td>${seatMap[p.name]}</td>
+        `;
+        resultBody.appendChild(tr);
+      }
+    }
+
+    function renderSteps(steps) {
+      stepsBody.innerHTML = "";
+      for (const st of steps) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${st.rank}</td>
+          <td>${escapeHtml(st.name)}</td>
+          <td>${st.q.toFixed(6)}</td>
+          <td>${st.seatsNow}</td>
+        `;
+        stepsBody.appendChild(tr);
+      }
+    }
+
+    $("#add").addEventListener("click", () => addRow());
+
+    $("#sample").addEventListener("click", () => {
+      tbody.innerHTML = "";
+      addRow("A党", 120000);
+      addRow("B党", 90000);
+      addRow("C党", 60000);
+      addRow("D党", 30000);
+      $("#seats").value = 10;
+    });
+
+    $("#calc").addEventListener("click", () => {
+      const { parties, totalSeats } = readInput();
+      if (parties.length === 0) {
+        alert("政党名が1つも入力されていません。");
+        return;
+      }
+      const { seats, steps } = dhondtAllocate(parties, totalSeats);
+      renderResults(parties, seats);
+      renderSteps(steps);
+    });
+
+    // 初期表示
+    addRow("A党", 120000);
+    addRow("B党", 90000);
+    addRow("C党", 60000);
+  </script>
+</body>
+</html>
