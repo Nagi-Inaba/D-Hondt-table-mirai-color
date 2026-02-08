@@ -166,14 +166,14 @@
   <main>
     <div class="row">
       <label>
-        総議席数（配分する数）
+        総議席数（配分する数・使用済みは引かない）
         <input id="seats" type="number" min="1" value="10" />
       </label>
       <button id="add" type="button">行を追加</button>
       <button id="calc" type="button">計算</button>
       <button id="sample" type="button">サンプル</button>
     </div>
-    <div class="note">入力：政党名・得票（またはポイント）・使用済み比例議席。出力：追加配分・比例合計と配分過程（上位商）。</div>
+    <div class="note">入力：政党名・得票（またはポイント）・使用済み比例議席。総議席数は固定で、使用済みを差し引かずに配分します。出力：追加配分・比例合計と配分過程（上位商）。</div>
 
     <div class="grid">
       <div>
@@ -351,8 +351,7 @@
         alert("政党名が1つも入力されていません。");
         return;
       }
-      const usedTotal = parties.reduce((sum, p) => sum + p.usedSeats, 0);
-      const remainingSeats = Math.max(0, totalSeats - usedTotal);
+      const remainingSeats = Math.max(0, totalSeats);
       const { seats, steps } = dhondtAllocate(parties, remainingSeats);
       renderResults(parties, seats);
       renderSteps(steps);
