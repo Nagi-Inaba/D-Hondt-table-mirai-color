@@ -257,32 +257,39 @@
     // D'Hondt: votes/(s+1) の最大を totalSeats 回選ぶ（比例枠の上限で打ち止め）
     // タイブレーク：商が同じなら得票が多い方（それも同じなら先に出た方）
     function dhondtAllocate(parties, totalSeats) {
-      const seats = Object.fromEntries(parties.map(p => [p.name, 0]));
+      const seats = Array.from({ length: parties.length }, () => 0);
       const steps = [];
 
       for (let k = 1; k <= totalSeats; k++) {
-        let best = null;
+        let bestIndex = -1;
+        let bestQ = -Infinity;
 
-        for (const p of parties) {
-          const s = seats[p.name];
+        for (const [index, p] of parties.entries()) {
+          const s = seats[index];
           if (Number.isFinite(p.plannedSeats) && s >= p.plannedSeats) {
             continue;
           }
           const q = p.votes / (s + 1);
-          if (!best || q > best.q || (q === best.q && p.votes > best.votes)) {
-            best = { name: p.name, q, votes: p.votes };
+          if (
+            bestIndex === -1 ||
+            q > bestQ ||
+            (q === bestQ && p.votes > parties[bestIndex].votes)
+          ) {
+            bestIndex = index;
+            bestQ = q;
           }
         }
 
-        if (!best) {
+        if (bestIndex === -1) {
           break;
         }
-        seats[best.name] += 1;
+        seats[bestIndex] += 1;
         steps.push({
           rank: k,
-          name: best.name,
-          q: best.q,
-          seatsNow: seats[best.name]
+          index: bestIndex,
+          name: parties[bestIndex].name,
+          q: bestQ,
+          seatsNow: seats[bestIndex]
         });
       }
       return { seats, steps };
@@ -292,30 +299,34 @@
       const rows = [...tbody.querySelectorAll("tr")];
       const parties = rows.map(tr => {
         const name = tr.children[0].querySelector("input").value.trim();
-        const votes = Number(tr.children[1].querySelector("input").value);
+        const votesInput = Number(tr.children[1].querySelector("input").value);
         const plannedInput = tr.children[2].querySelector("input").value.trim();
-        const plannedSeats = plannedInput === "" ? Number.POSITIVE_INFINITY : Number(plannedInput);
+        const plannedRaw = plannedInput === "" ? Number.POSITIVE_INFINITY : Number(plannedInput);
+        const plannedSeats = Number.isFinite(plannedRaw)
+          ? Math.max(0, Math.floor(plannedRaw))
+          : Number.POSITIVE_INFINITY;
+        const votes = Number.isFinite(votesInput) ? Math.max(0, Math.floor(votesInput)) : 0;
         return {
           name,
-          votes: Number.isFinite(votes) ? votes : 0,
-          plannedSeats: Number.isFinite(plannedSeats) ? plannedSeats : Number.POSITIVE_INFINITY
+          votes,
+          plannedSeats
         };
       }).filter(p => p.name !== "");
 
-      const totalSeats = Math.max(1, Number($("#seats").value) || 1);
+      const totalSeats = Math.max(1, Math.floor(Number($("#seats").value) || 1));
       return { parties, totalSeats };
     }
 
-    function renderResults(parties, seatMap) {
+    function renderResults(parties, seats) {
       resultBody.innerHTML = "";
-      const sorted = [...parties].sort((a,b) => {
-        const aTotal = seatMap[a.name];
-        const bTotal = seatMap[b.name];
+      const sorted = parties.map((p, index) => ({ ...p, index })).sort((a,b) => {
+        const aTotal = seats[a.index];
+        const bTotal = seats[b.index];
         return (bTotal - aTotal) || (b.votes - a.votes);
       });
 
       for (const p of sorted) {
-        const allocatedSeats = seatMap[p.name];
+        const allocatedSeats = seats[p.index];
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${escapeHtml(p.name)}</td>
